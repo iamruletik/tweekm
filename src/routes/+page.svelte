@@ -1,171 +1,86 @@
+<!--
+	`/` — one person's week. The grid plus the sidebar, with the task, project,
+	share and Excel dialogs. Prototype: always David, on fake in-memory data.
+-->
 <script lang="ts">
+	import { browser } from '$app/environment';
+
 	// Prototype only — fake data, no database yet.
 
-	type Task = { taskId: string; taskTitle: string; taskDescription: string };
-	type ProjectWithTasks = {
-		projectId: string;
-		projectName: string;
-		projectColor: string;
-		tasks: Task[];
-	};
+	import {
+		initialProjectsWithTasks,
+		buildFakeMonthOfHours,
+		toIsoDate,
+		type ProjectWithTasks,
+		projectColorPalette
+	} from '$lib/fakeData';
+	import WeekGrid from '$lib/components/WeekGrid.svelte';
+	import PeriodToolbar from '$lib/components/PeriodToolbar.svelte';
+	import Sidebar from '$lib/components/Sidebar.svelte';
+	import GridToolbar from '$lib/components/GridToolbar.svelte';
+	import SettingsModal from '$lib/components/SettingsModal.svelte';
+	import ExcelModal, { type ExcelMode } from '$lib/components/ExcelModal.svelte';
+	import { visibleDatesFor, type ViewMode } from '$lib/dates';
+	import { vacationDatesOf } from '$lib/vacations.svelte';
+	import { employeeById } from '$lib/studioData';
+	import { studioProfile } from '$lib/studioProfile.svelte';
 
-	const weekDayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-	const monthNames = [
-		'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-		'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-	];
+	let projectsWithTasks = $state<ProjectWithTasks[]>(initialProjectsWithTasks);
 
-	let projectsWithTasks = $state<ProjectWithTasks[]>([
-		{
-			projectId: 'qqbet',
-			projectName: 'QQbet',
-			projectColor: '#28D059',
-			tasks: [
-				{ taskId: 'logo', taskTitle: 'Создание логотипа для нового продукта', taskDescription: '' },
-				{ taskId: 'ui', taskTitle: 'Разработка пользовательского интерфейса', taskDescription: '' },
-				{
-					taskId: 'spin-assets',
-					taskTitle: 'Собрать ассеты для Жени в Spin Wheel',
-					taskDescription: '– Подготовить изображения для Spin Wheel page\n– Изображения для pop-up'
-				},
-				{
-					taskId: 'jackpot',
-					taskTitle: 'Jackpot landing page',
-					taskDescription: '– Сделать правки на 2 страницах'
-				}
-			]
-		},
-		{
-			projectId: 'back-office',
-			projectName: 'Back Office',
-			projectColor: '#8A38F5',
-			tasks: [
-				{
-					taskId: 'notifications',
-					taskTitle: 'Переработка таблицы Notification',
-					taskDescription: '– Создание упрощённой итерации на основе компонентов'
-				},
-				{ taskId: 'daily', taskTitle: 'Созвон – Daily QQ.bet', taskDescription: '' }
-			]
-		},
-		{
-			projectId: 'cyberus',
-			projectName: 'Сайберус',
-			projectColor: '#E46F86',
-			tasks: [
-				{
-					taskId: 'bonus-iterations',
-					taskTitle: 'Bonus Iterations (повторение бонусных кампаний)',
-					taskDescription: '– Проработка 3х итераций настройки\n– Презентация решения, обсуждение'
-				}
-			]
-		},
-		{
-			projectId: 'radiance',
-			projectName: 'Radiance',
-			projectColor: '#FFD73B',
-			tasks: [{ taskId: 'call-nastya', taskTitle: 'Созвон – Настя + Давид', taskDescription: '' }]
-		},
-		{ projectId: 'otoswap', projectName: 'Otoswap', projectColor: '#3C65E7', tasks: [] },
-		{ projectId: 'lead-junkies', projectName: 'Lead Junkies', projectColor: '#DC3FB2', tasks: [] }
-	]);
 
-	const projectColorPalette = [
-		'#28D059',
-		'#8A38F5',
-		'#E46F86',
-		'#FFD73B',
-		'#3C65E7',
-		'#DC3FB2',
-		'#B1B1B1'
-	];
+	// --- Settings modal ---
 
-	// --- Editing tasks and projects ---
+	type SettingsTab = 'account' | 'appearance' | 'workday' | 'data' | 'workspaces' | 'shortcuts';
 
-	let editingTaskId = $state<string | null>(null);
+	// Appearance
+	let roundToQuarterHour = $state(true);
+	let showWeekends = $state(true);
+	let accentPreference = $state('system');
 
-	// A task cell is one block of text: first line is the title, the rest is content.
-	function taskFullText(task: Task): string {
-		return task.taskDescription ? `${task.taskTitle}\n${task.taskDescription}` : task.taskTitle;
+	let isSettingsOpen = $state(false);
+	let settingsTab = $state<SettingsTab>('appearance');
+	let appearanceFont = $state('Inter');
+	let appearanceBaseFontSize = $state(16);
+	let appearanceRowPadding = $state(8);
+
+	function openSettingsAt(tab: SettingsTab) {
+		settingsTab = tab;
+		isSettingsOpen = true;
 	}
 
-	function setTaskFullText(task: Task, fullText: string) {
-		const [firstLine, ...restLines] = fullText.split('\n');
-		task.taskTitle = firstLine;
-		task.taskDescription = restLines.join('\n');
+	// --- Project edit modal ---
+
+	let editingProjectId = $state<string | null>(null);
+	let editingProjectName = $state('');
+	let editingProjectColor = $state('');
+
+	function openProjectEditor(project: ProjectWithTasks) {
+		editingProjectId = project.projectId;
+		editingProjectName = project.projectName;
+		editingProjectColor = project.projectColor;
 	}
 
-	// --- Dragging a task into another project ---
+	const editingProjectTaskCount = $derived(
+		projectsWithTasks.find((project) => project.projectId === editingProjectId)?.tasks.length ?? 0
+	);
 
-	let draggedTaskId = $state<string | null>(null);
-	let dragOverProjectId = $state<string | null>(null);
-
-	function handleTaskDrop(targetProjectId: string) {
-		if (draggedTaskId) moveTaskToProject(draggedTaskId, targetProjectId);
-		draggedTaskId = null;
-		dragOverProjectId = null;
-	}
-
-	// Day column the pointer is over, so the whole column can light up.
-	let hoveredDayIndex = $state<number | null>(null);
-
-	function addTask(projectId: string, taskTitle: string) {
-		const project = projectsWithTasks.find((candidate) => candidate.projectId === projectId);
-		if (!project || !taskTitle.trim()) return;
-		project.tasks.push({
-			taskId: crypto.randomUUID(),
-			taskTitle: taskTitle.trim(),
-			taskDescription: ''
-		});
-	}
-
-	function moveTaskToProject(taskId: string, targetProjectId: string) {
-		const sourceProject = projectsWithTasks.find((project) =>
-			project.tasks.some((task) => task.taskId === taskId)
+	function deleteEditingProject() {
+		if (editingProjectTaskCount > 0) return;
+		projectsWithTasks = projectsWithTasks.filter(
+			(project) => project.projectId !== editingProjectId
 		);
-		const targetProject = projectsWithTasks.find(
-			(project) => project.projectId === targetProjectId
+		editingProjectId = null;
+	}
+
+	function saveProjectEdits() {
+		const project = projectsWithTasks.find(
+			(candidate) => candidate.projectId === editingProjectId
 		);
-		if (!sourceProject || !targetProject || sourceProject === targetProject) return;
-
-		const taskIndex = sourceProject.tasks.findIndex((task) => task.taskId === taskId);
-		const [movedTask] = sourceProject.tasks.splice(taskIndex, 1);
-		targetProject.tasks.push(movedTask);
-	}
-
-	function projectIdOfTask(taskId: string): string {
-		return (
-			projectsWithTasks.find((project) => project.tasks.some((task) => task.taskId === taskId))
-				?.projectId ?? ''
-		);
-	}
-
-	let newProjectName = $state('');
-	let isAddingProject = $state(false);
-
-	function addProject() {
-		if (!newProjectName.trim()) return;
-		projectsWithTasks.push({
-			projectId: crypto.randomUUID(),
-			projectName: newProjectName.trim(),
-			projectColor: projectColorPalette[projectsWithTasks.length % projectColorPalette.length],
-			tasks: []
-		});
-		newProjectName = '';
-		isAddingProject = false;
-	}
-
-	function removeProject(projectId: string) {
-		projectsWithTasks = projectsWithTasks.filter((project) => project.projectId !== projectId);
-	}
-
-	// Inline "+ Задача" row: which project is currently typing a new task.
-	let addingTaskProjectId = $state<string | null>(null);
-	let inlineNewTaskTitle = $state('');
-
-	function confirmInlineNewTask(projectId: string) {
-		addTask(projectId, inlineNewTaskTitle);
-		inlineNewTaskTitle = '';
+		if (project && editingProjectName.trim()) {
+			project.projectName = editingProjectName.trim();
+			project.projectColor = editingProjectColor;
+		}
+		editingProjectId = null;
 	}
 
 	// --- New task modal (Cmd/Ctrl+K) ---
@@ -180,9 +95,88 @@
 		isNewTaskModalOpen = true;
 	}
 
+	// The modal can create the project it needs, so a first task never blocks.
+	const newProjectOptionId = '__new-project__';
+	let newTaskNewProjectName = $state('');
+
 	function confirmNewTask() {
-		addTask(newTaskProjectId, newTaskTitle);
+		let projectId = newTaskProjectId;
+		if (projectId === newProjectOptionId) {
+			const projectName = newTaskNewProjectName.trim();
+			if (!projectName) return;
+			projectId = `project-${Date.now()}`;
+			projectsWithTasks = [
+				...projectsWithTasks,
+				{
+					projectId,
+					projectName,
+					projectColor: projectColorPalette[projectsWithTasks.length % projectColorPalette.length],
+					tasks: []
+				}
+			];
+		}
+		addTask(projectId, newTaskTitle);
+		newTaskNewProjectName = '';
 		isNewTaskModalOpen = false;
+	}
+
+	// --- Excel import/export: layout only, nothing is read or written yet ---
+	let isExcelModalOpen = $state(false);
+	let excelMode = $state<ExcelMode>('export');
+
+	function openExcelModal(mode: ExcelMode) {
+		excelMode = mode;
+		isExcelModalOpen = true;
+	}
+
+	// Public share link — options live in the URL, no database yet.
+	let isShareModalOpen = $state(false);
+	let shareFromDate = $state('');
+	let shareToDate = $state('');
+	let shareProjectIds = $state<string[]>([]);
+	let shareIncludeRate = $state(false);
+	let shareHourlyRate = $state(2000);
+	let shareShowDescriptions = $state(true);
+	let isShareLinkCopied = $state(false);
+
+	// The link starts from the period on screen; the modal can widen it.
+	function openShareModal() {
+		const periodDates =
+			viewMode === 'year'
+				? [new Date(selectedDate.getFullYear(), 0, 1), new Date(selectedDate.getFullYear(), 11, 31)]
+				: visibleDatesFor(selectedDate, viewMode, true);
+		shareFromDate = toIsoDate(periodDates[0] ?? selectedDate);
+		shareToDate = toIsoDate(periodDates[periodDates.length - 1] ?? selectedDate);
+		shareProjectIds = projectsWithTasks.map((project) => project.projectId);
+		isShareLinkCopied = false;
+		isShareModalOpen = true;
+	}
+
+	function toggleShareProject(projectId: string) {
+		shareProjectIds = shareProjectIds.includes(projectId)
+			? shareProjectIds.filter((id) => id !== projectId)
+			: [...shareProjectIds, projectId];
+	}
+
+	const shareLinkPath = $derived.by(() => {
+		const params = new URLSearchParams();
+		params.set('from', shareFromDate);
+		params.set('to', shareToDate);
+		if (shareProjectIds.length !== projectsWithTasks.length) {
+			params.set('projects', shareProjectIds.join(','));
+		}
+		if (shareIncludeRate) params.set('rate', String(shareHourlyRate));
+		if (shareShowDescriptions) params.set('details', '1');
+		return `/share?${params.toString()}`;
+	});
+
+	const shareLink = $derived(
+		(browser ? window.location.origin : '') + shareLinkPath
+	);
+
+	async function copyShareLink() {
+		await navigator.clipboard.writeText(shareLink);
+		isShareLinkCopied = true;
 	}
 
 	function handleGlobalKeydown(event: KeyboardEvent) {
@@ -190,649 +184,308 @@
 			event.preventDefault();
 			openNewTaskModal();
 		}
-		if (event.key === 'Escape') isNewTaskModalOpen = false;
+		if (event.key === 'Escape') {
+			isNewTaskModalOpen = false;
+			isSettingsOpen = false;
+			isShareModalOpen = false;
+			isExcelModalOpen = false;
+			editingProjectId = null;
+		}
 	}
 
-	// Hours per cell, keyed "taskId:dayIndex". Empty string = nothing logged.
-	let hoursByCell = $state<Record<string, string>>({
-		'logo:2': '2',
-		'bonus-iterations:0': '5',
-		'bonus-iterations:1': '2,5',
-		'spin-assets:1': '1',
-		'notifications:1': '2,5',
-		'jackpot:0': '3',
-		'call-nastya:0': '1'
-	});
+	// Hours keyed "taskId:YYYY-MM-DD" — real dates, so each week shows its own numbers.
+	let hoursByTaskAndDate = $state<Record<string, string>>(buildFakeMonthOfHours());
+
+	const workspaces = $derived([
+		{ workspaceId: 'studio', workspaceName: studioProfile.studioName, workspaceColor: '#28D059' }
+	]);
+	let currentWorkspaceId = $state('studio');
+	const currentWorkspace = $derived(
+		workspaces.find((workspace) => workspace.workspaceId === currentWorkspaceId) ?? workspaces[0]
+	);
+
+	const interfaceLanguages = [
+		{ code: 'ru', label: 'Русский' },
+		{ code: 'en', label: 'English' }
+	];
+	let interfaceLanguage = $state('ru');
 
 	let isSidebarOpen = $state(true);
-	let isTableMenuOpen = $state(false);
-	let selectedDate = $state(new Date(2025, 6, 14));
+	// Shared by the toolbar's search box and the grid's row filter.
+	let searchQuery = $state('');
+	let selectedDate = $state(new Date());
+	let viewMode = $state<ViewMode>('week');
 
-	function toMondayOfWeek(date: Date): Date {
-		const monday = new Date(date);
-		const weekDayStartingMonday = (date.getDay() + 6) % 7;
-		monday.setDate(date.getDate() - weekDayStartingMonday);
-		return monday;
-	}
+	// Which way the grid slides when the period changes; PeriodToolbar sets it.
+	let slideDirection = $state(1);
 
-	function addDays(date: Date, dayCount: number): Date {
-		const shifted = new Date(date);
-		shifted.setDate(date.getDate() + dayCount);
-		return shifted;
-	}
+	// --- Norms, editable in settings ---
+	let targetHoursPerDay = $state(8);
+	let minimumHoursPerDay = $state(6);
+	let workDaysPerWeek = $state(5);
+	let workDayStartHour = $state(9);
+	let workDayEndHour = $state(17);
 
-	function isSameDay(first: Date, second: Date): boolean {
-		return first.toDateString() === second.toDateString();
-	}
+	// Prototype: this page is always David's week until auth lands.
+	const currentEmployeeId = 'david';
+	const currentUser = employeeById(currentEmployeeId)!;
+	const vacationDates = $derived(vacationDatesOf(currentEmployeeId));
 
-	function isInSelectedWeek(date: Date): boolean {
-		return isSameDay(toMondayOfWeek(date), toMondayOfWeek(selectedDate));
-	}
+	const visibleDates = $derived(visibleDatesFor(selectedDate, viewMode, showWeekends));
 
-	function isWeekend(date: Date): boolean {
-		return date.getDay() === 0 || date.getDay() === 6;
-	}
+	// The grid owns task creation — the modal just asks it to add one.
+	let weekGrid = $state<ReturnType<typeof WeekGrid> | null>(null);
+	let gridToolbar = $state<ReturnType<typeof GridToolbar> | null>(null);
 
-	// Fake: days that already have logged hours, shown as a dot in the calendar.
-	const datesWithLoggedHours = ['2025-07-14', '2025-07-15', '2025-07-16', '2025-07-09', '2025-07-22'];
-
-	function toIsoDate(date: Date): string {
-		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-	}
-
-	function hasLoggedHours(date: Date): boolean {
-		return datesWithLoggedHours.includes(toIsoDate(date));
-	}
-
-	// "Июль Н3" — month of the week's Monday plus its week number inside that month.
-	const selectedWeekLabel = $derived.by(() => {
-		const monday = toMondayOfWeek(selectedDate);
-		const weekNumberInMonth = Math.ceil(monday.getDate() / 7);
-		return `${monthNames[monday.getMonth()]} Н${weekNumberInMonth}`;
-	});
-
-	const visibleWeekDates = $derived(
-		Array.from({ length: 7 }, (_, dayIndex) => addDays(toMondayOfWeek(selectedDate), dayIndex))
-	);
-
-	// Month grid for the sidebar calendar, always 6 rows starting on Monday.
-	const visibleMonthDates = $derived.by(() => {
-		const firstOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-		const gridStart = toMondayOfWeek(firstOfMonth);
-		return Array.from({ length: 42 }, (_, cellIndex) => addDays(gridStart, cellIndex));
-	});
-
-	function goToPreviousWeek() {
-		selectedDate = addDays(selectedDate, -7);
-	}
-
-	function goToNextWeek() {
-		selectedDate = addDays(selectedDate, 7);
-	}
-
-	function goToToday() {
-		selectedDate = new Date();
-	}
-
-	// --- Clock in the toolbar ---
-
-	let currentTime = $state(new Date());
-
-	$effect(() => {
-		const tick = setInterval(() => (currentTime = new Date()), 1000);
-		return () => clearInterval(tick);
-	});
-
-	const todayLabel = $derived(
-		new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(
-			currentTime
-		)
-	);
-
-	const currentTimeLabel = $derived(
-		new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(currentTime)
-	);
-
-	// getTimezoneOffset counts minutes behind UTC, so the sign is flipped.
-	const timeZoneLabel = $derived.by(() => {
-		const offsetMinutes = -currentTime.getTimezoneOffset();
-		const sign = offsetMinutes < 0 ? '−' : '+';
-		const hours = Math.floor(Math.abs(offsetMinutes) / 60);
-		const minutes = Math.abs(offsetMinutes) % 60;
-		return `UTC${sign}${hours}${minutes ? `:${String(minutes).padStart(2, '0')}` : ''}`;
-	});
-
-	// --- Collapsible project groups ---
-
-	let collapsedProjectIds = $state<string[]>([]);
-
-	function toggleProjectCollapsed(projectId: string) {
-		collapsedProjectIds = collapsedProjectIds.includes(projectId)
-			? collapsedProjectIds.filter((id) => id !== projectId)
-			: [...collapsedProjectIds, projectId];
-	}
-
-	// --- Resizable columns (widths in pixels, shared by both tables) ---
-
-	let taskColumnWidth = $state(440);
-	let dayColumnWidths = $state(Array(7).fill(96));
-
-	const minimumTaskColumnWidth = 200;
-	const minimumDayColumnWidth = 56;
-
-	// The grid's own horizontal scrollbar is hidden. A strip under the hour columns
-	// carries a real scrollbar instead, and the three elements share scrollLeft.
-	let tableScrollElement = $state<HTMLDivElement | null>(null);
-	let totalsScrollElement = $state<HTMLDivElement | null>(null);
-	let scrollbarStripElement = $state<HTMLDivElement | null>(null);
-
-	const totalDayColumnsWidth = $derived(
-		dayColumnWidths.reduce((sum, columnWidth) => sum + columnWidth, 0)
-	);
-
-	// The strip is the only element that really scrolls sideways. The grid and the
-	// totals are moved by it, so nothing can scroll back and fight it.
-	function syncHorizontalScrollFromStrip() {
-		if (!scrollbarStripElement) return;
-		const scrollLeft = scrollbarStripElement.scrollLeft;
-		if (tableScrollElement) tableScrollElement.scrollLeft = scrollLeft;
-		if (totalsScrollElement) totalsScrollElement.scrollLeft = scrollLeft;
-	}
-
-	// Sideways wheel/trackpad over the grid is handed to the strip.
-	function forwardHorizontalWheelToStrip(event: WheelEvent) {
-		if (!scrollbarStripElement || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
-		event.preventDefault();
-		scrollbarStripElement.scrollLeft += event.deltaX;
-	}
-
-	function startColumnResize(event: PointerEvent, resizedColumn: 'task' | number) {
-		event.preventDefault();
-		const startPointerX = event.clientX;
-		const isTaskColumn = resizedColumn === 'task';
-		const startWidth = isTaskColumn ? taskColumnWidth : dayColumnWidths[resizedColumn as number];
-		const minimumWidth = isTaskColumn ? minimumTaskColumnWidth : minimumDayColumnWidth;
-
-		function handlePointerMove(moveEvent: PointerEvent) {
-			const nextWidth = Math.max(minimumWidth, startWidth + moveEvent.clientX - startPointerX);
-			if (isTaskColumn) taskColumnWidth = nextWidth;
-			else dayColumnWidths[resizedColumn as number] = nextWidth;
-		}
-
-		function handlePointerUp() {
-			window.removeEventListener('pointermove', handlePointerMove);
-			window.removeEventListener('pointerup', handlePointerUp);
-		}
-
-		window.addEventListener('pointermove', handlePointerMove);
-		window.addEventListener('pointerup', handlePointerUp);
-	}
-
-	function parseHours(rawValue: string): number {
-		return Number(rawValue.replace(',', '.')) || 0;
-	}
-
-	const totalsPerDay = $derived(
-		weekDayNames.map((_, dayIndex) =>
-			Object.entries(hoursByCell)
-				.filter(([cellKey]) => cellKey.endsWith(`:${dayIndex}`))
-				.reduce((sum, [, value]) => sum + parseHours(value), 0)
-		)
-	);
-
-	const totalHoursForWeek = $derived(totalsPerDay.reduce((sum, dayTotal) => sum + dayTotal, 0));
-
-	// Fake: hours logged in this month before the week on screen.
-	const loggedHoursEarlierInMonth = 74;
-
-	const loggedMonthHours = $derived(loggedHoursEarlierInMonth + totalHoursForWeek);
-
-	const targetHoursPerDay = 8;
-
-	// Expected load for the whole month: every weekday counts as a full day.
-	function countWeekdaysBetween(fromDate: Date, toDate: Date): number {
-		let weekdayCount = 0;
-		for (let day = new Date(fromDate); day <= toDate; day.setDate(day.getDate() + 1)) {
-			if (!isWeekend(day)) weekdayCount += 1;
-		}
-		return weekdayCount;
-	}
-
-	const expectedMonthHours = $derived.by(() => {
-		const firstOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-		const lastOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
-		return countWeekdaysBetween(firstOfMonth, lastOfMonth) * targetHoursPerDay;
-	});
-
-	const expectedHoursUntilToday = $derived.by(() => {
-		const firstOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-		const today = new Date();
-		if (today < firstOfMonth) return 0;
-		const lastOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
-		return countWeekdaysBetween(firstOfMonth, today < lastOfMonth ? today : lastOfMonth) * targetHoursPerDay;
-	});
-
-	const minimumHoursPerDay = 6;
-	const workDaysPerWeek = 5;
-
-	// Overtime stacks in 8-hour layers on top of the filled bar, 3 layers max (24h).
-	const maxProgressLayers = 3;
-
-	function overtimeLayerWidths(dayTotal: number): number[] {
-		return Array.from({ length: maxProgressLayers - 1 }, (_, layerIndex) =>
-			Math.min(
-				Math.max(dayTotal - targetHoursPerDay * (layerIndex + 1), 0) / targetHoursPerDay,
-				1
-			)
-		).filter((layerWidth) => layerWidth > 0);
-	}
-
-	// Red below the minimum, yellow between minimum and target, green at target.
-	function progressColorForDay(dayTotal: number): string {
-		if (dayTotal >= targetHoursPerDay) return '#28d059';
-		if (dayTotal >= minimumHoursPerDay) return '#ffd73b';
-		return '#e46f86';
+	function addTask(projectId: string, taskTitle: string) {
+		weekGrid?.addTask(projectId, taskTitle);
 	}
 </script>
 
-<svelte:window onclick={() => (isTableMenuOpen = false)} onkeydown={handleGlobalKeydown} />
+<svelte:head>
+	<link
+		rel="stylesheet"
+		href="https://fonts.googleapis.com/css2?family={appearanceFont.replace(
+			' ',
+			'+'
+		)}:wght@400;500;600&display=swap"
+	/>
+</svelte:head>
 
-<div class="app-layout" class:is-sidebar-collapsed={!isSidebarOpen}>
-	<aside class="sidebar">
-		<div class="sidebar-header">
-			<button class="icon-button" onclick={() => (isSidebarOpen = !isSidebarOpen)} title="Меню">
-				<span class="menu-icon"></span>
-			</button>
-			<span class="year-badge">{selectedDate.getFullYear()}</span>
-		</div>
+<!-- Any click outside closes whatever menu the toolbar has open. -->
+<svelte:window onclick={() => gridToolbar?.closeMenus()} onkeydown={handleGlobalKeydown} />
 
-		<div class="calendar">
-			{#each weekDayNames as weekDayName, weekDayIndex}
-				<div class="calendar-weekday" class:is-weekend={weekDayIndex >= 5}>{weekDayName}</div>
-			{/each}
-			{#each visibleMonthDates as monthDate}
-				<button
-					class="calendar-day"
-					class:is-outside-month={monthDate.getMonth() !== selectedDate.getMonth()}
-					class:is-weekend={isWeekend(monthDate)}
-					class:is-in-selected-week={isInSelectedWeek(monthDate)}
-					class:is-selected={isSameDay(monthDate, selectedDate)}
-					onclick={() => (selectedDate = monthDate)}
-				>
-					{monthDate.getDate()}
-					{#if hasLoggedHours(monthDate)}
-						<span class="logged-hours-dot"></span>
-					{/if}
-				</button>
-			{/each}
-		</div>
-
-		<div class="sidebar-section-title">
-			Проекты
-			<button class="add-project-button" onclick={() => (isAddingProject = true)}>+</button>
-		</div>
-
-		<ul class="project-list">
-			{#each projectsWithTasks as project (project.projectId)}
-				<li class="project-chip" style="background: {project.projectColor}">
-					{project.projectName}
-					{#if project.tasks.length === 0}
-						<button
-							class="remove-project-button"
-							title="Удалить проект"
-							onclick={() => removeProject(project.projectId)}>×</button
-						>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-
-		{#if isAddingProject}
-			<!-- svelte-ignore a11y_autofocus -->
-			<input
-				class="new-project-input"
-				placeholder="Название проекта"
-				bind:value={newProjectName}
-				autofocus
-				onkeydown={(event) => {
-					if (event.key === 'Enter') addProject();
-					if (event.key === 'Escape') isAddingProject = false;
-				}}
-				onblur={addProject}
-			/>
-		{/if}
-
-		<button class="sidebar-add-task-button" onclick={() => openNewTaskModal()}>
-			+ Новая задача <span class="keystroke-hint">⌘K</span>
-		</button>
-
-		<div class="month-load">
-			<div class="sidebar-section-title">Нагрузка за месяц</div>
-			<div class="month-load-numbers">
-				<strong>{loggedMonthHours}</strong>
-				<span>из {expectedMonthHours} ч</span>
-			</div>
-			<div class="month-load-track">
-				<div
-					class="month-load-expected"
-					style="width: {Math.min(expectedHoursUntilToday / expectedMonthHours, 1) * 100}%"
-				></div>
-				<div
-					class="month-load-done"
-					style="width: {Math.min(loggedMonthHours / expectedMonthHours, 1) * 100}%"
-				></div>
-			</div>
-			<div class="month-load-caption">
-				К сегодня ожидается {expectedHoursUntilToday} ч
-			</div>
-		</div>
-
-		<div class="sidebar-footer">
-			<img class="avatar" src="https://i.pravatar.cc/80?img=12" alt="David Gordov" />
-			<div class="user-details">
-				<span class="user-name">David Gordov</span>
-				<span class="user-role">Дизайнер</span>
-			</div>
-			<button class="icon-button" title="Настройки">⚙</button>
-		</div>
-	</aside>
+<div
+	class="app-layout"
+	class:is-sidebar-collapsed={!isSidebarOpen}
+	style="font-family: '{appearanceFont}', ui-sans-serif, system-ui, sans-serif;
+	       --row-padding: {appearanceRowPadding / 16}rem"
+>
+		<Sidebar
+			employeeId={currentEmployeeId}
+			userName={currentUser.employeeName}
+			userRole={currentUser.employeeRole}
+			userEmail={currentUser.employeeEmail}
+			avatarUrl={currentUser.avatarUrl}
+			bind:selectedDate
+			bind:isSidebarOpen
+			{hoursByTaskAndDate}
+			{targetHoursPerDay}
+			onRequestNewTask={() => openNewTaskModal()}
+			onOpenSettings={(tab) => openSettingsAt(tab as SettingsTab)}
+			workspaceName={currentWorkspace.workspaceName}
+			workspaceColor={currentWorkspace.workspaceColor}
+			bind:interfaceLanguage
+			{interfaceLanguages}
+			{workspaces}
+			{currentWorkspaceId}
+			onSwitchWorkspace={(workspaceId) => (currentWorkspaceId = workspaceId)}
+		/>
 
 	<main class="week-grid">
 		<div class="toolbar">
-			<h1 class="today-heading">
-				<span class="today-date">{todayLabel}</span>
-				<span class="current-time">{currentTimeLabel}</span>
-				<span class="time-zone-capsule">{timeZoneLabel}</span>
-			</h1>
-
-			<div class="week-switcher">
-				<button class="icon-button-light" onclick={goToPreviousWeek}>‹</button>
-				<span class="month-name">{selectedWeekLabel}</span>
-				<button class="icon-button-light" onclick={goToNextWeek}>›</button>
-				<button class="pill-button is-dark" onclick={goToToday}>Сегодня</button>
+			<div class="toolbar-group">
+				<PeriodToolbar
+					bind:selectedDate
+					bind:viewMode
+					bind:slideDirection
+					{showWeekends}
+				/>
 			</div>
 
-			<div class="table-menu">
-				<button
-					class="pill-button"
-					onclick={(event) => {
-						event.stopPropagation();
-						isTableMenuOpen = !isTableMenuOpen;
-					}}
-				>
-					Таблица ▾
-				</button>
-				{#if isTableMenuOpen}
-					<div class="table-menu-dropdown">
-						<button>Импорт из Excel</button>
-						<button>Экспорт в Excel</button>
-					</div>
-				{/if}
-			</div>
+			<GridToolbar
+				bind:this={gridToolbar}
+				bind:viewMode
+				{projectsWithTasks}
+				bind:searchQuery
+				onFitColumns={() => weekGrid?.fitColumns()}
+				onOpenShare={openShareModal}
+				onOpenExcel={openExcelModal}
+			/>
 		</div>
 
-		{#snippet columnWidths()}
-			<colgroup>
-				<col style="width: {taskColumnWidth}px" />
-				{#each dayColumnWidths as dayColumnWidth}
-					<col style="width: {dayColumnWidth}px" />
-				{/each}
-			</colgroup>
-		{/snippet}
+		<WeekGrid
+			bind:this={weekGrid}
+			bind:projectsWithTasks
+			bind:hoursByTaskAndDate
+			bind:selectedDate
+			bind:viewMode
+			{slideDirection}
+			{showWeekends}
+			{targetHoursPerDay}
+			{minimumHoursPerDay}
+			{roundToQuarterHour}
+			onRequestNewTask={() => openNewTaskModal()}
+			onEditProject={openProjectEditor}
+			{vacationDates}
+			{searchQuery}
+			allowEntryMove
+		/>
 
-		<div
-			class="table-scroll-area"
-			bind:this={tableScrollElement}
-			onwheel={forwardHorizontalWheelToStrip}
-		>
-		<table>
-			{@render columnWidths()}
-			<thead>
-				<tr>
-					<th class="task-column">
-						Задача
-						<button
-							class="column-resize-handle"
-							aria-label="Изменить ширину колонки"
-							onpointerdown={(event) => startColumnResize(event, 'task')}
-						></button>
-					</th>
-					{#each visibleWeekDates as weekDate, dayIndex}
-						<th
-							class="day-column"
-							class:is-selected-day={isSameDay(weekDate, selectedDate)}
-							class:is-today={isSameDay(weekDate, new Date())}
-							class:is-hovered={hoveredDayIndex === dayIndex}
-							onmouseenter={() => (hoveredDayIndex = dayIndex)}
-							onmouseleave={() => (hoveredDayIndex = null)}
-						>
-							{weekDayNames[dayIndex]}<span class="day-number">{weekDate.getDate()}</span>
-							<button
-								class="column-resize-handle"
-								aria-label="Изменить ширину колонки"
-								onpointerdown={(event) => startColumnResize(event, dayIndex)}
-							></button>
-						</th>
-					{/each}
-				</tr>
-			</thead>
-
-			<tbody>
-				{#each projectsWithTasks as project (project.projectId)}
-					<tr
-						class="project-row"
-						class:is-drop-target={dragOverProjectId === project.projectId}
-						ondragover={(event) => {
-							event.preventDefault();
-							dragOverProjectId = project.projectId;
-						}}
-						ondragleave={() => (dragOverProjectId = null)}
-						ondrop={() => handleTaskDrop(project.projectId)}
-					>
-						<td
-							colspan={weekDayNames.length + 1}
-							style="background: color-mix(in srgb, {project.projectColor} 14%, white)"
-						>
-							<button
-								class="project-toggle"
-								onclick={() => toggleProjectCollapsed(project.projectId)}
-							>
-								<span
-									class="project-chevron"
-									class:is-collapsed={collapsedProjectIds.includes(project.projectId)}>▾</span
-								>
-								<span class="project-dot" style="background: {project.projectColor}"></span>
-								{project.projectName}
-								<span class="project-task-count">{project.tasks.length}</span>
-							</button>
-						</td>
-					</tr>
-
-					{#each collapsedProjectIds.includes(project.projectId) ? [] : project.tasks as task (task.taskId)}
-						<tr
-							class:is-dragging={draggedTaskId === task.taskId}
-							class:is-drop-target={dragOverProjectId === project.projectId}
-							ondragover={(event) => {
-								event.preventDefault();
-								dragOverProjectId = project.projectId;
-							}}
-							ondrop={() => handleTaskDrop(project.projectId)}
-						>
-							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-							<td
-								class="task-column is-clickable"
-								onclick={() => (editingTaskId = task.taskId)}
-							>
-								{#if editingTaskId === task.taskId}
-									<div
-										class="task-editor"
-										onfocusout={(event) => {
-											if (!event.currentTarget.contains(event.relatedTarget as Node)) editingTaskId = null;
-										}}
-									>
-										<!-- svelte-ignore a11y_autofocus -->
-										<textarea
-											class="task-title-input"
-											rows={Math.max(2, taskFullText(task).split('\n').length + 1)}
-											value={taskFullText(task)}
-											autofocus
-											oninput={(event) => setTaskFullText(task, event.currentTarget.value)}
-											onkeydown={(event) => {
-												if (event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey)))
-													editingTaskId = null;
-											}}
-										></textarea>
-										<div class="task-editor-floating">
-											<select
-												class="task-project-select"
-												value={projectIdOfTask(task.taskId)}
-												onchange={(event) => moveTaskToProject(task.taskId, event.currentTarget.value)}
-											>
-												{#each projectsWithTasks as projectOption (projectOption.projectId)}
-													<option value={projectOption.projectId}>{projectOption.projectName}</option>
-												{/each}
-											</select>
-											<button class="task-editor-confirm" title="Готово" onclick={() => (editingTaskId = null)}>
-												✓
-											</button>
-										</div>
-									</div>
-								{:else}
-									<div class="task-row-content">
-										<span
-											class="task-drag-handle"
-											role="button"
-											tabindex="0"
-											title="Перетащить в другой проект"
-											draggable="true"
-											ondragstart={() => (draggedTaskId = task.taskId)}
-											ondragend={() => {
-												draggedTaskId = null;
-												dragOverProjectId = null;
-											}}
-										>⠿</span>
-										<button class="task-title-button" onclick={() => (editingTaskId = task.taskId)}>
-											<span class="task-title-line">{task.taskTitle}</span>
-											{#if task.taskDescription}
-												<span class="task-description">{task.taskDescription}</span>
-											{/if}
-										</button>
-									</div>
-								{/if}
-							</td>
-							{#each visibleWeekDates as weekDate, dayIndex}
-								<td
-									class="day-column"
-									class:is-selected-day={isSameDay(weekDate, selectedDate)}
-									class:is-today={isSameDay(weekDate, new Date())}
-									class:is-hovered={hoveredDayIndex === dayIndex}
-									onmouseenter={() => (hoveredDayIndex = dayIndex)}
-									onmouseleave={() => (hoveredDayIndex = null)}
-								>
-									<input
-										class="hours-input"
-										inputmode="decimal"
-										bind:value={
-											() => hoursByCell[`${task.taskId}:${dayIndex}`] ?? '',
-											(newValue) => (hoursByCell[`${task.taskId}:${dayIndex}`] = newValue)
-										}
-									/>
-								</td>
-							{/each}
-						</tr>
-					{/each}
-
-					{#if !collapsedProjectIds.includes(project.projectId)}
-						<tr class="add-task-row">
-							<td class="task-column" colspan={weekDayNames.length + 1}>
-								{#if addingTaskProjectId === project.projectId}
-									<!-- svelte-ignore a11y_autofocus -->
-									<input
-										class="task-title-input"
-										placeholder="Название задачи"
-										bind:value={inlineNewTaskTitle}
-										autofocus
-										onkeydown={(event) => {
-											if (event.key === 'Enter') confirmInlineNewTask(project.projectId);
-											if (event.key === 'Escape') addingTaskProjectId = null;
-										}}
-										onblur={() => {
-											confirmInlineNewTask(project.projectId);
-											addingTaskProjectId = null;
-										}}
-									/>
-								{:else}
-									<button
-										class="add-task-button"
-										onclick={() => {
-											inlineNewTaskTitle = '';
-											addingTaskProjectId = project.projectId;
-										}}
-									>
-										+ Добавить
-									</button>
-								{/if}
-							</td>
-						</tr>
-					{/if}
-				{/each}
-			</tbody>
-		</table>
-		</div>
-
-		<!-- Real scrollbar, but only as wide as the hour columns. -->
-		<div class="scrollbar-strip">
-			<div class="scrollbar-strip-spacer" style="width: {taskColumnWidth}px"></div>
-			<div
-				class="scrollbar-strip-track"
-				bind:this={scrollbarStripElement}
-				onscroll={syncHorizontalScrollFromStrip}
-			>
-				<div style="width: {totalDayColumnsWidth}px; height: 1px" aria-hidden="true"></div>
-			</div>
-		</div>
-
-		<!-- Separate table so the totals sit at the bottom of the panel, not after the list. -->
-		<div class="totals-scroll-area" bind:this={totalsScrollElement}>
-		<table class="totals-table">
-			{@render columnWidths()}
-			<tbody>
-				<tr>
-					<td class="task-column">
-						Всего часов — {totalHoursForWeek} из {targetHoursPerDay * workDaysPerWeek}
-					</td>
-					{#each totalsPerDay as dayTotal, dayIndex}
-						<td
-							class="day-column"
-							class:is-selected-day={isSameDay(visibleWeekDates[dayIndex], selectedDate)}
-							class:is-today={isSameDay(visibleWeekDates[dayIndex], new Date())}
-						>
-							<div class="day-total">
-								{Math.min(dayTotal, targetHoursPerDay)}
-								{#if dayTotal > targetHoursPerDay}
-									<span class="overtime-badge">+{dayTotal - targetHoursPerDay}</span>
-								{/if}
-							</div>
-
-							<div class="day-progress-track">
-								<div
-									class="day-progress-fill"
-									style="width: {Math.min(dayTotal / targetHoursPerDay, 1) * 100}%;
-									       background: {progressColorForDay(dayTotal)}"
-								></div>
-
-								{#each overtimeLayerWidths(dayTotal) as layerWidth}
-									<div class="day-progress-overtime-layer" style="width: {layerWidth * 100}%"></div>
-								{/each}
-							</div>
-						</td>
-					{/each}
-				</tr>
-			</tbody>
-		</table>
-		</div>
 	</main>
 </div>
+
+
+{#if editingProjectId}
+	<div class="modal-backdrop" onclick={() => (editingProjectId = null)} role="presentation">
+		<div class="modal" onclick={(event) => event.stopPropagation()} role="presentation">
+			<h2>Проект</h2>
+
+			<!-- svelte-ignore a11y_autofocus -->
+			<input class="modal-input" bind:value={editingProjectName} autofocus />
+
+			<div class="color-swatches">
+				{#each projectColorPalette as paletteColor}
+					<button
+						class="color-swatch"
+						class:is-selected={editingProjectColor === paletteColor}
+						style="background: {paletteColor}"
+						aria-label={paletteColor}
+						onclick={() => (editingProjectColor = paletteColor)}
+					></button>
+				{/each}
+			</div>
+
+			{#if editingProjectTaskCount > 0}
+				<p class="modal-hint">
+					В проекте {editingProjectTaskCount} задач — сначала перенесите или удалите их,
+					иначе часы останутся без проекта.
+				</p>
+			{/if}
+
+			<div class="modal-actions">
+				<button
+					class="pill-button is-danger"
+					disabled={editingProjectTaskCount > 0}
+					title={editingProjectTaskCount > 0 ? 'Сначала уберите задачи из проекта' : 'Удалить проект'}
+					onclick={deleteEditingProject}
+				>
+					Удалить
+				</button>
+				<button class="pill-button" onclick={() => (editingProjectId = null)}>Отмена</button>
+				<button class="pill-button is-dark" onclick={saveProjectEdits}>Сохранить</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<ExcelModal
+	bind:isOpen={isExcelModalOpen}
+	mode={excelMode}
+	isStacked={isSettingsOpen}
+	{projectsWithTasks}
+	{hoursByTaskAndDate}
+	periodFromDate={toIsoDate(visibleDates[0] ?? selectedDate)}
+	periodToDate={toIsoDate(visibleDates[visibleDates.length - 1] ?? selectedDate)}
+/>
+
+{#if isSettingsOpen}
+	<SettingsModal
+		bind:isSettingsOpen
+		bind:settingsTab
+		{projectsWithTasks}
+		bind:targetHoursPerDay
+		bind:minimumHoursPerDay
+		bind:workDaysPerWeek
+		bind:workDayStartHour
+		bind:workDayEndHour
+		bind:roundToQuarterHour
+		bind:showWeekends
+		bind:accentPreference
+		bind:appearanceFont
+		bind:appearanceBaseFontSize
+		bind:appearanceRowPadding
+		bind:interfaceLanguage
+		{interfaceLanguages}
+		{workspaces}
+		bind:currentWorkspaceId
+		userName={currentUser.employeeName}
+		userRole={currentUser.employeeRole}
+		userEmail={currentUser.employeeEmail}
+		avatarUrl={currentUser.avatarUrl}
+		onOpenExcel={openExcelModal}
+	/>
+{/if}
+
+{#if isShareModalOpen}
+	<div class="modal-backdrop" onclick={() => (isShareModalOpen = false)} role="presentation">
+		<div class="modal is-share" onclick={(event) => event.stopPropagation()} role="presentation">
+			<h2>Публичная ссылка на отчёт</h2>
+
+			<div class="settings-row">
+				<div class="settings-row-text">
+					<strong>Период</strong>
+					<span>Какие дни попадут в отчёт</span>
+				</div>
+				<div class="share-dates">
+					<input class="modal-input is-compact" type="date" bind:value={shareFromDate} />
+					<input class="modal-input is-compact" type="date" bind:value={shareToDate} />
+				</div>
+			</div>
+
+			<div class="settings-row is-stacked">
+				<div class="settings-row-text">
+					<strong>Проекты</strong>
+					<span>Выбрано: {shareProjectIds.length} из {projectsWithTasks.length}</span>
+				</div>
+				<div class="share-projects">
+					{#each projectsWithTasks as project (project.projectId)}
+						<label class="share-project">
+							<input
+								type="checkbox"
+								checked={shareProjectIds.includes(project.projectId)}
+								onchange={() => toggleShareProject(project.projectId)}
+							/>
+							<span class="share-project-dot" style:background={project.projectColor}></span>
+							{project.projectName}
+						</label>
+					{/each}
+				</div>
+			</div>
+
+			<div class="settings-row">
+				<div class="settings-row-text">
+					<strong>Стоимость часа</strong>
+					<span>Показать сумму в отчёте</span>
+				</div>
+				<div class="share-rate">
+					{#if shareIncludeRate}
+						<input
+							class="modal-input is-tiny"
+							type="number"
+							min="0"
+							step="100"
+							bind:value={shareHourlyRate}
+						/>
+					{/if}
+					<input type="checkbox" class="settings-switch" bind:checked={shareIncludeRate} />
+				</div>
+			</div>
+
+			<div class="settings-row">
+				<div class="settings-row-text">
+					<strong>Описания задач</strong>
+					<span>Показывать текст под названием</span>
+				</div>
+				<input type="checkbox" class="settings-switch" bind:checked={shareShowDescriptions} />
+			</div>
+
+			<div class="share-link-row">
+				<input class="modal-input is-compact share-link-input" readonly value={shareLink} />
+				<button class="pill-button" onclick={copyShareLink}>
+					{isShareLinkCopied ? 'Скопировано' : 'Копировать'}
+				</button>
+			</div>
+
+			<div class="modal-actions">
+				<button class="pill-button" onclick={() => (isShareModalOpen = false)}>Закрыть</button>
+				<a class="pill-button is-dark" href={shareLinkPath} target="_blank" rel="noreferrer">
+					Открыть отчёт
+				</a>
+			</div>
+		</div>
+	</div>
+{/if}
 
 {#if isNewTaskModalOpen}
 	<div class="modal-backdrop" onclick={() => (isNewTaskModalOpen = false)} role="presentation">
@@ -854,7 +507,19 @@
 				{#each projectsWithTasks as projectOption (projectOption.projectId)}
 					<option value={projectOption.projectId}>{projectOption.projectName}</option>
 				{/each}
+				<option value={newProjectOptionId}>+ Новый проект…</option>
 			</select>
+
+			{#if newTaskProjectId === newProjectOptionId}
+				<input
+					class="modal-input"
+					placeholder="Название нового проекта"
+					bind:value={newTaskNewProjectName}
+					onkeydown={(event) => {
+						if (event.key === 'Enter') confirmNewTask();
+					}}
+				/>
+			{/if}
 
 			<div class="modal-actions">
 				<button class="pill-button" onclick={() => (isNewTaskModalOpen = false)}>Отмена</button>
@@ -864,256 +529,32 @@
 	</div>
 {/if}
 
-<style>
-	:global(:root) {
-		--color-shell: #1d1d1d;
-		--color-panel: #ffffff;
-		--color-cell-tint: #f4f4f4;
-		--color-border: #ededed;
-		--color-text: #10161f;
-		--color-text-on-shell: #d4d4d4;
-		--color-text-muted: #6b6b6b;
-		--color-weekend: #e46f86;
-		--color-overtime: #8a38f5;
-	}
-
-	:global(body) {
-		margin: 0;
-		background: var(--color-shell);
-		font-family: ui-sans-serif, system-ui, sans-serif;
-		color: var(--color-text);
-	}
-
-	/* Sidebar sits on the right, grid on the left. */
+<style>	/* Sidebar sits on the right, grid on the left. */
 	.app-layout {
 		display: grid;
-		grid-template-columns: 1fr 264px;
-		height: 100vh;
+		/* Sidebar breathes with the viewport instead of being pinned to 264px. */
+		grid-template-columns: 1fr clamp(15rem, 18vw, 20rem);
+		height: 100dvh;
 		overflow: hidden;
 		transition: grid-template-columns 0.15s ease;
 	}
-
 	.app-layout.is-sidebar-collapsed {
-		grid-template-columns: 1fr 56px;
+		grid-template-columns: 1fr 3.5rem;
 	}
-
-	.sidebar {
-		order: 2;
-		display: flex;
-		flex-direction: column;
-		gap: 18px;
-		padding: 14px;
-		color: var(--color-text-on-shell);
-		overflow: hidden;
-	}
-
-	.is-sidebar-collapsed .sidebar > *:not(.sidebar-header) {
-		display: none;
-	}
-
-	.sidebar-header,
-	.sidebar-footer {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.sidebar-header {
-		justify-content: space-between;
-	}
-
-	.sidebar-footer {
-		margin-top: auto;
-	}
-
-	.icon-button {
-		width: 30px;
-		height: 30px;
-		display: grid;
-		place-items: center;
-		border: 0;
-		border-radius: 8px;
-		background: #2a2a2a;
-		color: var(--color-text-on-shell);
-		font-size: 15px;
-		cursor: pointer;
-	}
-
-	.menu-icon,
-	.menu-icon::before,
-	.menu-icon::after {
-		display: block;
-		width: 14px;
-		height: 1.5px;
-		background: currentColor;
-	}
-
-	.menu-icon::before,
-	.menu-icon::after {
-		content: '';
-		position: relative;
-		top: -5px;
-	}
-
-	.menu-icon::after {
-		top: 3.5px;
-	}
-
-	.pill-button {
-		border: 0;
-		border-radius: 8px;
-		background: var(--color-panel);
-		color: var(--color-text);
-		padding: 6px 12px;
-		font: inherit;
-		font-size: 13px;
-		cursor: pointer;
-	}
-
 	.pill-button.is-dark {
 		background: var(--color-shell);
 		color: var(--color-panel);
 	}
-
-	.week-switcher {
-		display: flex;
-		align-items: center;
-		gap: 6px;
+	.pill-button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
-
-	.icon-button-light {
-		width: 28px;
-		height: 28px;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		background: var(--color-panel);
-		font-size: 15px;
-		cursor: pointer;
-	}
-
-	.month-name {
-		font-size: 13px;
-		min-width: 76px;
-		text-align: center;
-	}
-
-	.year-badge {
-		background: #2a2a2a;
-		border-radius: 8px;
-		padding: 4px 8px;
-		font-size: 12px;
-	}
-
-	.calendar {
-		display: grid;
-		grid-template-columns: repeat(7, 1fr);
-		gap: 2px;
-	}
-
-	.calendar-weekday {
-		text-align: center;
-		font-size: 11px;
-		color: #6b6b6b;
-		padding-bottom: 4px;
-	}
-
-	.calendar-day {
-		position: relative;
-		border: 0;
-		background: transparent;
-		color: var(--color-text-on-shell);
-		border-radius: 7px;
-		padding: 6px 0 9px;
-		font: inherit;
-		font-size: 12px;
-		cursor: pointer;
-	}
-
-	.calendar-weekday.is-weekend,
-	.calendar-day.is-weekend {
-		color: var(--color-weekend);
-	}
-
-	.logged-hours-dot {
-		position: absolute;
-		bottom: 3px;
-		left: 50%;
-		transform: translateX(-50%);
-		width: 3px;
-		height: 3px;
-		border-radius: 50%;
-		background: currentColor;
-	}
-
-	.calendar-day:hover {
-		background: #2a2a2a;
-	}
-
-	.calendar-day.is-outside-month {
-		color: #4a4a4a;
-	}
-
-	.calendar-day.is-in-selected-week {
-		background: #333333;
-	}
-
-	.calendar-day.is-selected {
-		background: var(--color-panel);
-		color: var(--color-text);
-	}
-
-	.sidebar-section-title {
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--color-text-muted);
-	}
-
-	.project-list {
+	.modal-hint {
 		margin: 0;
-		padding: 0;
-		list-style: none;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-	}
-
-	.project-chip {
-		border-radius: 7px;
-		padding: 4px 9px;
-		font-size: 12px;
-		color: #10161f;
-	}
-
-	.avatar {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		background: #3a3a3a;
-		object-fit: cover;
-		flex: none;
-	}
-
-	.user-details {
-		display: flex;
-		flex-direction: column;
-		line-height: 1.25;
-		min-width: 0;
-	}
-
-	.user-name {
-		font-size: 13px;
-	}
-
-	.user-role {
-		font-size: 11px;
+		font-size: 0.75rem;
+		line-height: 1.4;
 		color: var(--color-text-muted);
 	}
-
-	.sidebar-footer .icon-button {
-		margin-left: auto;
-	}
-
 	.week-grid {
 		order: 1;
 		/* Lets the panel shrink instead of pushing the page wider than the screen. */
@@ -1121,574 +562,113 @@
 		display: flex;
 		flex-direction: column;
 		background: var(--color-panel);
-		border-radius: 14px;
-		margin: 10px 0 10px 10px;
+		border-radius: 0.875rem;
+		margin: 0.625rem 0 0.625rem 0.625rem;
 		overflow: hidden;
 	}
-
-	/* Never scrolls sideways on its own — the strip below drives it. */
-	.table-scroll-area {
-		flex: 1;
-		overflow-x: hidden;
-		overflow-y: auto;
-	}
-
-	.scrollbar-strip {
-		display: flex;
-	}
-
-	.scrollbar-strip-spacer {
-		flex: none;
-	}
-
-	.scrollbar-strip-track {
-		flex: 1;
-		min-width: 0;
-		height: 14px;
-		overflow-x: auto;
-		overflow-y: hidden;
-	}
-
-	.scrollbar-strip-track::-webkit-scrollbar {
-		height: 8px;
-	}
-
-	.scrollbar-strip-track::-webkit-scrollbar-thumb {
-		background: #c9c9c9;
-		border-radius: 4px;
-	}
-
 	.toolbar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 12px 16px;
+		padding: 0.75rem 1rem;
 		border-bottom: 1px solid var(--color-border);
 	}
 
-	.toolbar h1 {
-		margin: 0;
-		font-size: 15px;
+@keyframes panel-in {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
 	}
-
-	.today-heading {
+	.color-swatches {
 		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-weight: 600;
+		gap: 0.375rem;
+		flex-wrap: wrap;
 	}
-
-	.today-date::first-letter {
-		text-transform: uppercase;
-	}
-
-	.current-time {
-		font-variant-numeric: tabular-nums;
-		color: var(--color-text-muted);
-		font-weight: 500;
-	}
-
-	.time-zone-capsule {
-		background: var(--color-cell-tint);
-		border-radius: 999px;
-		padding: 3px 9px;
-		font-size: 11px;
-		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	.table-menu {
-		position: relative;
-	}
-
-	.table-menu .pill-button {
-		border: 1px solid var(--color-border);
-	}
-
-	.table-menu-dropdown {
-		position: absolute;
-		right: 0;
-		top: calc(100% + 6px);
-		background: var(--color-panel);
-		border: 1px solid var(--color-border);
-		border-radius: 10px;
-		box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
-		display: flex;
-		flex-direction: column;
-		min-width: 170px;
-		overflow: hidden;
-		z-index: 10;
-	}
-
-	.table-menu-dropdown button {
+	.color-swatch {
+		width: 1.625rem;
+		height: 1.625rem;
 		border: 0;
-		background: none;
-		padding: 9px 12px;
-		text-align: left;
-		font: inherit;
-		font-size: 13px;
+		border-radius: 0.5rem;
 		cursor: pointer;
+		transition: transform 0.14s cubic-bezier(0.33, 1, 0.68, 1);
 	}
-
-	.table-menu-dropdown button:hover {
-		background: #f5f5f5;
+	.color-swatch:hover {
+		transform: scale(1.12);
 	}
-
-	/* Fixed layout so the totals table lines up with the scrolling one. */
-	table {
-		width: max-content;
-		min-width: 100%;
-		table-layout: fixed;
-		border-collapse: separate;
-		border-spacing: 0;
-		font-size: 13px;
-	}
-
-	.totals-scroll-area {
-		overflow: hidden;
-	}
-
-	/* Header row stays pinned while the task list scrolls. */
-	thead th {
-		position: sticky;
-		top: 0;
-		z-index: 5;
-	}
-
-	thead th.task-column {
-		z-index: 6;
-	}
-
-	/* Task column never scrolls away sideways. */
-	.task-column {
-		position: sticky;
-		left: 0;
-		z-index: 2;
-		background: var(--color-panel);
-	}
-
-	.column-resize-handle {
-		position: absolute;
-		top: 0;
-		right: -3px;
-		width: 7px;
-		height: 100%;
-		padding: 0;
-		border: 0;
-		background: transparent;
-		cursor: col-resize;
-		z-index: 3;
-	}
-
-	.column-resize-handle:hover {
-		background: rgb(0 0 0 / 0.08);
-	}
-
-	th {
-		position: relative;
-	}
-
-	th.task-column {
-		z-index: 4;
-	}
-
-	.project-toggle {
-		position: sticky;
-		left: 10px;
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		border: 0;
-		background: none;
-		padding: 0;
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.project-chevron {
-		display: inline-block;
-		transition: transform 0.12s ease;
-	}
-
-	.project-chevron.is-collapsed {
-		transform: rotate(-90deg);
-	}
-
-	.project-task-count {
-		color: var(--color-text-muted);
-		font-weight: 500;
-		margin-left: 4px;
-	}
-
-	th,
-	td {
-		border-bottom: 1px solid var(--color-border);
-		border-right: 1px solid var(--color-border);
-		padding: 8px 10px;
-		text-align: left;
-		vertical-align: top;
-	}
-
-	.day-column {
-		text-align: center;
-		padding: 0;
-		background: var(--color-panel);
-	}
-
-	th.day-column {
-		padding: 8px 6px;
-		text-align: center;
-		font-weight: 500;
-		background: var(--color-panel);
-	}
-
-	/* Selected day: grey header, column stays white. */
-	th.day-column.is-selected-day {
-		background: var(--color-cell-tint);
-	}
-
-	/* Today: black header, whole column slightly grey. Wins over selected. */
-	th.day-column.is-today {
-		background: var(--color-shell);
-		color: var(--color-panel);
-	}
-
-	.day-column.is-today {
-		background: var(--color-cell-tint);
-	}
-
-	.day-number {
-		margin-left: 6px;
-		color: #aaa;
-	}
-
-	.project-row td {
-		background: var(--color-panel);
-		font-weight: 600;
-	}
-
-	.project-dot {
-		display: inline-block;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		margin-right: 7px;
-	}
-
-	/* Editing fills the whole cell; the project picker floats over the rows below. */
-	.task-column:has(.task-editor) {
-		padding: 0;
-	}
-
-	.task-editor {
-		position: relative;
-	}
-
-	.task-title-input {
-		width: 100%;
-		box-sizing: border-box;
-		min-height: 48px;
-		border: 0;
+	.color-swatch.is-selected {
 		outline: 2px solid var(--color-shell);
-		outline-offset: -2px;
-		/* room on the right for the floating project picker */
-		padding: 8px 190px 8px 10px;
-		font: inherit;
-		resize: none;
-		line-height: 1.45;
+		outline-offset: 2px;
 	}
-
-	.task-editor-floating {
-		position: absolute;
-		top: 4px;
-		right: 4px;
-		z-index: 30;
-		display: flex;
-		gap: 6px;
-		background: var(--color-panel);
-		border: 1px solid var(--color-border);
-		border-radius: 10px;
-		padding: 6px;
-		box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
-	}
-
-	.task-editor-confirm {
-		border: 0;
-		border-radius: 7px;
-		background: var(--color-shell);
-		color: var(--color-panel);
-		width: 30px;
-		cursor: pointer;
-		font-size: 13px;
-	}
-
-	/* Hovering any cell lights the whole day column. */
-	.day-column.is-hovered {
-		background: var(--color-cell-tint);
-	}
-
-	.month-load {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.month-load-numbers {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		color: var(--color-text-on-shell);
-		font-size: 13px;
-	}
-
-	.month-load-numbers strong {
-		font-size: 18px;
-	}
-
-	.month-load-track {
-		position: relative;
-		height: 6px;
-		border-radius: 3px;
-		background: #2a2a2a;
-		overflow: hidden;
-	}
-
-	/* Grey marker = what should be done by today, green = what is done. */
-	.month-load-expected,
-	.month-load-done {
-		position: absolute;
-		inset: 0 auto 0 0;
-		border-radius: 3px;
-	}
-
-	.month-load-expected {
-		background: #4a4a4a;
-	}
-
-	.month-load-done {
-		background: #28d059;
-	}
-
-	.month-load-caption {
-		font-size: 11px;
-		color: var(--color-text-muted);
-	}
-
-	.task-column.is-clickable {
-		cursor: text;
-	}
-
-	.task-row-content {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-	}
-
-	.task-drag-handle {
-		color: #c4c4c4;
-		cursor: grab;
-		font-size: 12px;
-		user-select: none;
-	}
-
-	.task-drag-handle:active {
-		cursor: grabbing;
-	}
-
-	tr.is-dragging {
-		opacity: 0.4;
-	}
-
-	tr.is-drop-target td {
-		box-shadow: inset 0 2px 0 var(--color-shell);
-	}
-
-	.task-title-button {
-		display: block;
-		width: 100%;
-		border: 0;
-		background: none;
-		padding: 0;
-		text-align: left;
-		font: inherit;
-		font-weight: 500;
-		cursor: text;
-	}
-
-	.task-editor {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.task-project-select,
-	.new-project-input {
-		border: 1px solid var(--color-border);
-		border-radius: 7px;
-		padding: 5px 8px;
-		font: inherit;
-		font-size: 12px;
-		background: var(--color-panel);
-	}
-
-	.add-task-row td {
-		background: var(--color-panel);
-	}
-
-	.add-task-button {
-		border: 0;
-		background: none;
-		padding: 2px 0;
-		font: inherit;
-		font-size: 12px;
-		color: var(--color-text-muted);
-		cursor: pointer;
-	}
-
-	.add-task-button:hover {
-		color: var(--color-text);
-	}
-
-	.add-project-button,
-	.remove-project-button {
-		border: 0;
-		background: none;
-		padding: 0 2px;
-		font: inherit;
-		cursor: pointer;
-		color: inherit;
-	}
-
-	.add-project-button {
-		margin-left: auto;
-		font-size: 14px;
-	}
-
-	.remove-project-button {
-		margin-left: 5px;
-		opacity: 0.55;
-	}
-
-	.new-project-input {
-		width: 100%;
-		box-sizing: border-box;
-	}
-
-	.sidebar-add-task-button {
+	/* One setting per row: label + explanation on the left, control on the right. */
+	.settings-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		border: 0;
-		border-radius: 9px;
-		background: #2a2a2a;
-		color: var(--color-text-on-shell);
-		padding: 8px 10px;
-		font: inherit;
-		font-size: 13px;
-		cursor: pointer;
+		gap: 1rem;
+		padding: 0.6875rem 0;
+		border-bottom: 1px solid var(--color-border);
 	}
-
-	.keystroke-hint {
-		color: #7a7a7a;
-		font-size: 11px;
+	.settings-row:last-of-type {
+		border-bottom: 0;
 	}
-
-	.modal-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgb(0 0 0 / 0.45);
-		display: grid;
-		place-items: center;
-		z-index: 50;
-	}
-
-	.modal {
-		background: var(--color-panel);
-		border-radius: 14px;
-		padding: 18px;
-		width: 380px;
+	.settings-row-text {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: 0.125rem;
+		min-width: 0;
 	}
-
-	.modal h2 {
-		margin: 0;
-		font-size: 15px;
-	}
-
-	.modal-input {
-		border: 1px solid var(--color-border);
-		border-radius: 9px;
-		padding: 9px 10px;
-		font: inherit;
-		font-size: 13px;
-		background: var(--color-panel);
-	}
-
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 8px;
-		margin-top: 4px;
-	}
-
-	.task-title-line {
-		display: block;
+	.settings-row-text strong {
+		font-size: 0.8125rem;
 		font-weight: 500;
 	}
-
-	.task-description {
-		display: block;
+	.settings-row-text span {
+		font-size: 0.6875rem;
 		color: var(--color-text-muted);
-		white-space: pre-line;
-		margin-top: 2px;
 	}
-
-	.hours-input {
-		width: 100%;
-		height: 38px;
-		border: 0;
-		background: transparent;
-		text-align: center;
-		font: inherit;
-		outline-offset: -2px;
+	/* Tinted square holding the ring, like the reference widget. */
+	.modal.is-share {
+		width: min(94vw, 30rem);
 	}
-
-	.totals-table td {
-		font-weight: 600;
-		background: var(--color-panel);
-		border-top: 1px solid var(--color-border);
-		border-bottom: 0;
-		padding: 8px 10px;
+	.settings-row.is-stacked {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.5rem;
 	}
-
-	.day-total {
-		text-align: center;
+	.share-dates {
+		display: flex;
+		gap: 0.375rem;
 	}
-
-	.overtime-badge {
-		color: var(--color-overtime);
+	.share-projects {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.75rem;
 	}
-
-	.day-progress-track {
-		position: relative;
-		height: 5px;
-		margin-top: 5px;
-		border-radius: 3px;
-		background: #ececec;
-		overflow: hidden;
+	.share-project {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-size: 0.8125rem;
 	}
-
-	.day-progress-overtime-layer {
-		position: absolute;
-		inset: 0 auto 0 0;
-		background: rgb(0 0 0 / 0.35);
+	.share-project-dot {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
 	}
-
-	.day-progress-fill {
-		height: 100%;
-		border-radius: 2px;
+	.share-rate {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.share-link-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.25rem;
+	}
+	.share-link-input {
+		flex: 1;
+		min-width: 0;
+		color: var(--color-text-muted);
 	}
 </style>

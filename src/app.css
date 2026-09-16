@@ -1,0 +1,409 @@
+/* Shared chrome: buttons, dropdowns, modals, toolbars, switches. Used by every route. */
+
+
+.icon-button {
+	width: 1.875rem;
+	height: 1.875rem;
+	display: grid;
+	place-items: center;
+	border: 0;
+	border-radius: 0.5rem;
+	background: #1c1c1c;
+	color: var(--color-text-on-shell);
+	font-size: 0.9375rem;
+	cursor: pointer;
+}
+
+.pill-button {
+	border: 0;
+	border-radius: 0.5rem;
+	background: var(--color-panel);
+	color: var(--color-text);
+	padding: 0.375rem 0.75rem;
+	font: inherit;
+	font-size: 0.8125rem;
+	cursor: pointer;
+}
+
+.pill-button.is-dark {
+	background: var(--color-shell);
+	color: var(--color-panel);
+}
+
+.icon-button-light {
+	display: grid;
+	place-items: center;
+	width: 1.75rem;
+	height: 1.75rem;
+	color: var(--color-text);
+	transition: background 0.12s ease;
+	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
+	background: var(--color-panel);
+	font-size: 0.9375rem;
+	cursor: pointer;
+}
+
+.icon-button-light:hover {
+	background: #f1f1f1;
+}
+
+.avatar {
+	width: 2rem;
+	height: 2rem;
+	border-radius: 50%;
+	background: #3a3a3a;
+	object-fit: cover;
+	flex: none;
+}
+
+.toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.75rem 1rem;
+	border-bottom: 1px solid var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
+.pill-button.is-danger {
+	color: var(--color-weekend);
+	margin-right: auto;
+}
+
+/* One setting per row: label + explanation on the left, control on the right. */
+.settings-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.6875rem 0;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.settings-row:last-of-type {
+	border-bottom: 0;
+}
+
+.settings-row-text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	min-width: 0;
+}
+
+.settings-row-text strong {
+	font-size: 0.8125rem;
+	font-weight: 500;
+}
+
+.settings-row-text span {
+	font-size: 0.6875rem;
+	color: var(--color-text-muted);
+}
+
+.modal-input.is-compact {
+	width: 11rem;
+	flex: none;
+	padding: 0.4375rem 0.5rem;
+}
+
+.modal-input.is-tiny {
+	width: 4.5rem;
+	flex: none;
+	padding: 0.4375rem 0.5rem;
+}
+
+.settings-switch {
+	width: 1.125rem;
+	height: 1.125rem;
+	accent-color: var(--color-shell);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Tinted square holding the ring, like the reference widget. */
+
+
+
+
+
+
+
+
+
+
+
+
+.toolbar-group {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+
+.dropdown {
+	position: relative;
+}
+
+.ghost-menu-button {
+	height: 1.875rem;
+	padding: 0 0.625rem;
+	border: 0;
+	border-radius: 0.5rem;
+	background: none;
+	font: inherit;
+	font-size: 0.875rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background 0.12s ease;
+}
+
+.ghost-menu-button:hover {
+	background: #f1f1f1;
+}
+
+.dropdown-panel {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 6px);
+	z-index: 40;
+	background: var(--color-panel);
+	border: 1px solid var(--color-border);
+	border-radius: 0.75rem;
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+	padding: 0.625rem;
+	min-width: 11.875rem;
+}
+
+.dropdown-panel.is-list {
+	padding: 0.25rem;
+	display: flex;
+	flex-direction: column;
+}
+
+.dropdown-panel.is-list button {
+	border: 0;
+	background: none;
+	padding: 0.5rem 0.625rem;
+	border-radius: 0.5rem;
+	text-align: left;
+	font: inherit;
+	font-size: 0.8125rem;
+	cursor: pointer;
+	transition: background 0.12s ease;
+}
+
+.dropdown-panel.is-list button:hover {
+	background: #f5f5f5;
+}
+
+
+.project-dot {
+	display: inline-block;
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: 50%;
+	margin-right: 0.4375rem;
+}
+
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgb(0 0 0 / 0.45);
+	display: grid;
+	place-items: center;
+	z-index: 50;
+}
+
+.modal {
+	background: var(--color-panel);
+	border-radius: 0.875rem;
+	padding: 1.125rem;
+	width: min(92vw, 24rem);
+	display: flex;
+	flex-direction: column;
+	gap: 0.625rem;
+}
+
+.modal h2 {
+	margin: 0;
+	font-size: 0.9375rem;
+}
+
+.modal-input {
+	border: 1px solid var(--color-border);
+	border-radius: 0.5625rem;
+	padding: 0.5625rem 0.625rem;
+	font: inherit;
+	font-size: 0.8125rem;
+	background: var(--color-panel);
+}
+
+.settings-row.is-stacked {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.5rem;
+}
+
+.modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-top: 0.25rem;
+}
+
+/* One easing everywhere, so interactions feel like one system. */
+.pill-button,
+.icon-button,
+.project-toggle,
+.add-task-button,
+.task-drag-handle,
+.project-chip,
+.remove-project-button,
+.add-project-button,
+.sidebar-add-task-button,
+.task-editor-confirm,
+.calendar-day,
+.year-day,
+.month-picker-cell,
+.search-result {
+	transition:
+		background 0.14s cubic-bezier(0.33, 1, 0.68, 1),
+		color 0.14s cubic-bezier(0.33, 1, 0.68, 1),
+		opacity 0.14s cubic-bezier(0.33, 1, 0.68, 1),
+		transform 0.14s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.color-swatch {
+	width: 1.625rem;
+	height: 1.625rem;
+	border: 0;
+	border-radius: 0.5rem;
+	cursor: pointer;
+	transition: transform 0.14s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* Marks a control that is drawn but not wired yet, so nobody has to guess. */
+.soon-tag {
+	flex: none;
+	align-self: center;
+	padding: 0.0625rem 0.375rem;
+	border: 1px solid var(--color-border);
+	border-radius: 999px;
+	background: var(--color-cell-tint);
+	color: var(--color-text-muted);
+	font-size: 0.625rem;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+}
+
+.settings-row-text strong .soon-tag {
+	margin-left: 0.375rem;
+}
+
+.dropdown-panel.is-list button .soon-tag {
+	margin-left: auto;
+}
+
+/* A dialog opened from inside another dialog sits above it. */
+.modal-backdrop.is-stacked {
+	z-index: 60;
+	background: rgb(0 0 0 / 0.35);
+}
+
+/* --- Auth forms: one field stack, shared by login, signup and reset --- */
+.auth-field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.auth-field label {
+	font-size: 0.75rem;
+	color: var(--color-text-muted);
+}
+
+.auth-field .modal-input {
+	width: 100%;
+}
+
+.auth-submit-button {
+	margin-top: 0.375rem;
+	border: 0;
+	border-radius: 0.5625rem;
+	background: var(--color-shell);
+	color: var(--color-panel);
+	padding: 0.625rem;
+	font: inherit;
+	font-size: 0.8125rem;
+	cursor: pointer;
+	transition: opacity 0.14s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.auth-submit-button:hover {
+	opacity: 0.85;
+}
+
+.auth-submit-button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.auth-links {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.75rem;
+	font-size: 0.75rem;
+}
+
+.auth-links a {
+	color: var(--color-text-muted);
+}
+
+.auth-note {
+	margin: 0;
+	padding: 0.625rem 0.75rem;
+	border-radius: 0.5rem;
+	background: var(--color-cell-tint);
+	font-size: 0.75rem;
+	line-height: 1.4;
+	color: var(--color-text-muted);
+}
+
+.auth-error {
+	margin: 0;
+	font-size: 0.75rem;
+	color: var(--color-weekend);
+}

@@ -180,3 +180,111 @@ export default { kit: { adapter: adapter() } };
 2. Mobile PWA capture view + offline queue
 3. Admin read-only rollup (all users × week, CSV export)
 4. Invoicing — revisit scope after 1–3 have real weeks of data in them
+
+## Where the project actually stands (updated 2026-09-13)
+
+The schema above is the *plan*. None of it exists yet: the Supabase database was
+deliberately wiped, `supabase/migrations/` is empty, and `src/lib/supabase.ts` is
+an untyped browser client nothing calls. Everything below runs on fake in-memory
+data, by choice — Ruletik wanted to see and use the screens before deciding what
+the tables should be.
+
+### Routes
+
+The product is called **Tweekm**; the studio inside it is **Radiance**.
+
+- `/` — one person's week: the grid, sidebar (calendar, load gauges, vacation
+  counter with a request form, user menu, notifications), settings, share and
+  Excel dialogs. Project settings open from the `⋯` on a project row in the table.
+- `/boss` — the studio lead's app, four tabs:
+  - **Студия** — every employee's tasks. Filters (сотрудник / клиент / проект /
+    search) and configurable grouping: group by project, person or client, with
+    the other dimension shown as a row label, sorted by name or hours.
+  - **Мои задачи** — deliberately identical to `/` (project groups, no labels,
+    nothing to configure), counters scaled to one person.
+  - **Команда** — people as rows, days or months as columns: load per day,
+    vacations (approved solid, pending striped) with approve/decline, per-person
+    load bars, studio overview cards, hiring (invite staff / add outsource),
+    per-employee card (role, email, password reset, salary or hourly rate, note)
+    and archiving.
+  - **Проекты и клиенты** — inline editing of both plus `⋯` editors, creation,
+    merging duplicate projects (tasks move, everyone gets notified), per-client
+    rate and currency, and the client report link.
+- `/landing` — placeholder marketing page: one paragraph, three cards, links in.
+- `/login`, `/signup`, `/reset-password` — auth screens, UI only, sharing
+  `AuthShell.svelte`. Login matches a fake email and redirects; signup creates a
+  *studio* (staff arrive by invite only); reset has both states (ask for email,
+  then `?token=…` to set a password).
+- `/share` — the public read-only report, with the studio logo in its header. Two modes: one person's projects, or
+  studio-wide filtered by clients/projects/employees. Renders like an invoice
+  (hours, rate in the client's currency, totals). Signed-in owner sees an edit
+  bar: rewrite titles and body text, adjust hours, drop rows — report-only, the
+  grid is never touched; anyone else sees a plain read-only sheet.
+
+### Shared code
+
+- `src/lib/components/` — `WeekGrid` (the whole table: header, groups, cells,
+  editor, drag & drop of tasks and of individual entries, column resize, fake
+  scrollbar, totals, year view), `TeamGrid`, `Sidebar`, `PeriodToolbar`,
+  `GridToolbar`, `ViewModeMenu`, `SettingsModal`, `ExcelModal` (import/export
+  layout, deliberately inert), `AuthShell`.
+- `src/lib/dates.ts` — week/month dates, `visibleDatesFor`, weekday counting.
+- `src/lib/hours.ts` — **the only place hour totals are computed**:
+  `aggregateHours(map, keyOf)` does one pass and buckets by any key; everything
+  else looks up. Re-scanning entries per cell is what made Chrome hang once.
+  `expectedHoursFor(dates, norm, headcount)` is likewise **the only** answer to
+  "how many hours should this period hold" — weekends never count, even when the
+  grid shows them. Three screens used to disagree about this.
+- `src/lib/vacations.svelte.ts` — **the only vacation source**: one record per
+  request with a status, shared by the grid, the calendar, the counter and
+  `TeamGrid`. Approving on Команда changes every screen at once.
+- `src/lib/studioProfile.svelte.ts` — studio name + logo (data URL for now), used
+  by the sidebar, `/boss` and the client report.
+- `src/lib/fakeData.ts`, `src/lib/studioData.ts` — prototype data, including
+  deliberately messy duplicates ("QQbet" / "QQ bet" / "ККбет") to exercise
+  merging, and an outsource person with no account.
+- `src/lib/notifications.svelte.ts` — in-memory notification store behind the
+  sidebar bell.
+- `src/app.css` — shared chrome (buttons, dropdowns, modals, toolbar, switches).
+  Page-specific CSS stays scoped in its component.
+
+### Still fake / not built
+
+Nothing persists — a reload rebuilds the fake data, logo included. Excel import
+and export are a full dialog with an inert button. No auth: `/login` matches a
+fake email, `/` and `/boss` are hardcoded to David, and the boss/client split on
+`/share` is a toggle. No template rollover, no per-entry note, no locked weeks,
+no report snapshots, no CSV, no arrow-key grid nav. No offline queue, no PWA
+work, no mobile view — mobile is deliberately deferred until after first release.
+
+`AUDIT.md` holds the full list with file:line; `PROTOTYPE-LABELS.md` holds every
+string and disabled control that must not ship.
+
+### Next step
+
+Deconstruct the prototype into the real schema. The screens now say what the
+tables need: employees (staff/outsource/invited/archived, salary or hourly rate),
+clients (rate, currency), projects (client, merged-into), tasks (project, owner),
+entries, vacations with a status, notifications, and frozen report snapshots
+(one row per shared report — ~5 KB each, so ~0.6 MB/year at 10 reports a month).
+
+## Working agreements (read before touching anything)
+
+- Read `IDIOT-LOG.md` at the start of every session and before reporting work as
+  done. Every entry is a mistake that already cost Ruletik time — do not repeat
+  it. Same for `IDIOT-LOG-RULETIK.md` (his own misses, logged on request).
+- Read `GOOD-IDEAS.md` too: those are decisions that turned out right and should
+  be reused rather than re-litigated.
+- Update the count in the heading and add the entry in the same edit, the moment
+  he says "+1 idiot".
+- English only in conversation with Ruletik; the app's interface text stays
+  Russian.
+- Plan before building, one step at a time, and let him decide — see the rules
+  in his memory file `working-rules.md`.
+- `AUDIT.md` is the standing list of what is broken, missing or inconsistent in
+  the prototype. Tick items off there as they are fixed; add what you find.
+- **`PROTOTYPE-LABELS.md` must stay current.** Anything that only exists because
+  the app runs on fake data — a `позже`/`макет` tag, a `disabled` button, copy
+  admitting nothing is saved, a hardcoded user — goes in that file the moment it
+  is added, so none of it reaches a real studio. A new control is either wired or
+  tagged; never silently dead.
